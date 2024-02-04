@@ -1,0 +1,7 @@
+name = "ACiD"
+uuid = "61bcfe73-0ff0-466d-b13c-3ec560fb4d71"
+authors = ["Jakub Peleška", "Adrian Filcík", "Josef Weis"]
+version = "1.0.0-DEV"
+
+[compat]
+julia = "1.10"
