@@ -1,0 +1,7 @@
+{
+  "editor.formatOnSave": true,
+  "editor.tabSize": 4,
+  "[julia]": {
+    "editor.defaultFormatter": "julialang.language-julia",
+  }
+}
