@@ -8,8 +8,8 @@
 # from multiprocessing import Process, Manager
 # from utils.graph_utils import ExponentialGraph, CycleGraph
 
-# for the purpose of testing the documentation
-export sync_process, listen_given_rank, master_process
+const KILL_PROCESS_SIGNAL = Int64(-2)
+
 
 """
 ### Process run by every worker in the background.
@@ -107,39 +107,29 @@ Parameters:
 - log (logger): to print messages in the logs if needed.
 """
 function listen_given_rank(
-    rank,
-    world_size,
-    queue,
-    nb_tot_grad_so_far,
-    lock,
-    log,
+    rank::Int64,
+    comm::MPI.Comm,
+    queue::Channel{Int64},
+    ∇steps::Threads.Atomic{Int64},
 )
-    # initialize the process group for rank communications
-    process_group = dist.init_process_group(
-        backend = "gloo",
-        init_method = "tcp://" +
-                      os.environ["MASTER_ADDR"] +
-                      ":" +
-                      str(int(os.environ["MASTER_PORT"]) + 1),
-        rank = rank + world_size,
-        world_size = 2 * world_size + 1,
-    )
     # initialize the placeholder tensor
-    tensor_other_rank = torch.zeros(1)
-    # while the master process does not send the order to kill all processes
-    while tensor_other_rank.data != -2
+    ∇₊ = 0
+
+    while true
         # receive information that worker rank is available for communications.
         # the act of receiving a message is the signal itself.
         # the inside of 'tensor_other_rank' variable contains the "new grads" performed by rank since last communication.
-        dist.recv(tensor_other_rank, rank, process_group)
-        # acquire the lock to edit the global count of grads
-        lock.acquire()
+        ∇₊ = MPI.recv(comm, rank, rank * 2)
+
+        # order to kill all processes
+        if ∇₊ == -2
+            break
+        end
+
         # add the new grads
-        nb_tot_grad_so_far.value += int(tensor_other_rank.data)
+        Threads.atomic_add!(∇steps, ∇₊)
         # signal the orchestrating process that worker nb rank is available for communication
-        queue.put(rank)
-        # release the lock so that another process can edit the variable
-        lock.release()
+        put!(queue, rank)
     end
 end
 
@@ -153,90 +143,55 @@ This process accomplishes 2 things:
 
 Parameters:
 - world_size (int): the total number of workers.
-- nb_grad_tot_goal (int): The target number of total nb of grads performed by all workers.
+- ∇max_steps (int): The target number of total nb of grads performed by all workers.
                             When it is reached, this process sends the signal to all other to stop all computations & communications.
-- log (logger): to print messages in the logs if needed.
-- graph_topology (str): Graph topology to use to make p2p communication (dictates which edges can be used).
-                        Currently supports either of ['complete'].
-- deterministic_neighbor (bool): whether or not to schedule the p2p communications.
-                                    if True, if at the next step, worker i is supposed to communicate with j,
-                                    i will wait for j to be available to communicate.
-                                    if False, i will communicate faster, by just picking one of its available neighbor.
 """
-function master_process(
-    world_size,
-    nb_grad_tot_goal,
-    log,
-    graph_topology,
-    deterministic_neighbor,
-)
+function master_process(world_size::Int64, comm::MPI.Comm, ∇max_steps::Int64)
     # Initialize multiprocessing variables shared with the "listen_given_rank" processes, also hosted by worker 0.
     # Queue containing the rank of available workers. 
     # Ranks are enqueued by their corresponding "listen_given_rank" process, and dequeued here to make pairs.
-    queue = mp.Queue()
-    # lock to protect the edit of variables shared by those multiple processes.
-    lock = mp.Lock()
+    queue = Channel{Int64}(Inf)
+
     # Init an int storing the global count of grads (total number of gradients taken by all workers).
     # this mp.Value is shared with all "listen_given_rank" processes, so that they can edit it.
     # When the target number of grads is reached, this process sends the signal to all other to stop all computations & communications.
-    nb_tot_grad_so_far = mp.Value("i", 0)
-    list_processes = []
+    ∇steps = Threads.Atomic{Int64}(0)
+
     # launch the listening processes for each rank
-    for rank in range(world_size)
-        listen_process = Process(
-            target = listen_given_rank,
-            args = (rank, world_size, queue, nb_tot_grad_so_far, lock, log),
-        )
-        listen_process.start()
-        list_processes.append(listen_process)
-    end
-    # initialize the process group for rank communications
-    process_group = dist.init_process_group(
-        backend = "gloo",
-        init_method = "tcp://" +
-                      os.environ["MASTER_ADDR"] +
-                      ":" +
-                      str(int(os.environ["MASTER_PORT"]) + 1),
-        rank = 2 * world_size,
-        world_size = 2 * world_size + 1,
-    )
+    list_processes = [
+        Threads.@spawn listen_given_rank(rank, comm, queue, ∇steps) for
+        rank in 0:world_size
+    ]
+
     # tuple of ranks stores the first 2 available workers to communicate
-    # only used if the graph_topology is not complete.
     tuple_of_ranks = []
     # init placeholder tensors to communicate with the appropriate "sync_process" process.
-    tensor_rank_0 = torch.zeros(1)
-    tensor_rank_1 = torch.zeros(1)
-
-    # if the topology is not complete
-    if graph_topology != "complete"
-        throw(ValueError("Supported graph topologies are ['complete']."))
-    end
+    rank₀ = 0
+    rank₁ = 0
 
     # while the total number of grad is not reached
-    while nb_tot_grad_so_far.value < nb_grad_tot_goal
+    while ∇steps[] < ∇max_steps
         # get the rank of the first available worker
-        tuple_of_ranks.append(queue.get())
+        append!(tuple_of_ranks, take!(queue))
         # if 2 workers are available for communication
-        if len(tuple_of_ranks) == 2
+        if length(tuple_of_ranks) == 2
             # gather their ranks
-            tensor_rank_0[0] = tuple_of_ranks[0]
-            tensor_rank_1[0] = tuple_of_ranks[1]
+            rank₀ = tuple_of_ranks[0]
+            rank₁ = tuple_of_ranks[1]
             # send their ranks to each other
-            dist.send(tensor_rank_0, tuple_of_ranks[1], process_group)
-            dist.send(tensor_rank_1, tuple_of_ranks[0], process_group)
+            MPI.Isend(rank₀, comm, rank₁)
+            MPI.Isend(rank₁, comm, rank₀)
             # re-initialize the tuple as an empty one
             tuple_of_ranks = []
         end
     end
+
     # when we go out of the while loop, send to everybody the message to stop processes
-    kill_process_signal = torch.ones(1) * (-2)
-    for rank in range(world_size)
-        dist.send(kill_process_signal, rank, process_group)
-    end
+    req = [MPI.Isend(KILL_PROCESS_SIGNAL, comm, rank) for rank in 0:world_size]
+
+    MPI.Waitall(req)
 
     # terminates all processes
-    for p in list_processes
-        p.join()
-    end
+    fetch.(list_processes)
 end
 
