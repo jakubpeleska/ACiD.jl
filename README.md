@@ -9,7 +9,7 @@ This is an implementation of an asynchronous multiprocessing optimization algori
 ## Usage
 ### Install mpiexecjl
 
-You can install mpiexecjl with MPI.install_mpiexecjl(). The default destination directory is joinpath(DEPOT_PATH[1], "bin"), which usually translates to ~/.julia/bin, but check the value on your system. You can also tell MPI.install_mpiexecjl to install to a different directory.
+You can install mpiexecjl with MPI.install_mpiexecjl(). The default destination directory is joinpath(DEPOT_PATH\[1\], "bin"), which usually translates to ~/.julia/bin, but check the value on your system. You can also tell MPI.install_mpiexecjl to install to a different directory.
 
 ```julia
 $ julia
