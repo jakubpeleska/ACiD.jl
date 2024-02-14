@@ -8,3 +8,5 @@ $ julia
 julia> using MPI
 julia> MPI.install_mpiexecjl()
 ```
+
+To quickly call this wrapper we recommend you to add the destination directory to your PATH environment variable.
