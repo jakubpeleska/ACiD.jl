@@ -4,10 +4,10 @@
 # import torch.distributed as dist
 # from utils.acid_utils import acid_ode
 
-using ExponentialUtilities
 
 # functions need to be exported for the documentation
-export acid_ode, do_send, do_recv, gossip_process
+
+const AVERAGING_TAG = 345
 
 """
 ### Integrate the ODE for the continuous momentum, see https://arxiv.org/pdf/2306.08289.pdf for details.
@@ -21,29 +21,30 @@ Parameters:
 - t\\_new (float): time of the current update.
 - delta\\_t\\_grad (float): time that it takes to compute a grad step. Used to re-normalize time, as done in the paper.
 """
-function acid_ode(
-    params_com::Vector,
-    params_com_tilde::Vector,
-    ode_matrix::Matrix,
-    t_old::Real,
-    t_new::Real,
-    delta_t_grad::Real,
-)
-    # Compute the exponential of the matrix of the ode system
-    # between t_old and t_new (we re-normalize time using delta_t_grad as the unit of time)
-    exp_M = exponential!(ode_matrix * (t_new - t_old) / delta_t_grad)
-    a, b, c, d = exp_M[1, 1], exp_M[1, 2], exp_M[2, 1], exp_M[2, 2]
-    # Do the mixing in-place, so first remembers the value of params
-    params_old = params_com.detach().clone()
-    # matrix multiplication
-    params_com.mul_(a).add_(params_com_tilde, alpha = b)
-    params_com_tilde.mul_(d).add_(params_old, alpha = c)
-end
+# function acid_ode(
+#     params_com::Tens,
+#     params_com_tilde::Vector,
+#     ode_matrix::Matrix,
+#     t_old::Real,
+#     t_new::Real,
+#     delta_t_grad::Real,
+# )
+#     # Compute the exponential of the matrix of the ode system
+#     # between t_old and t_new (we re-normalize time using delta_t_grad as the unit of time)
+#     exp_M = exponential!(ode_matrix * (t_new - t_old) / delta_t_grad)
+#     a, b, c, d = exp_M[1, 1], exp_M[1, 2], exp_M[2, 1], exp_M[2, 2]
+#     # Do the mixing in-place, so first remembers the value of params
+#     params_old = params_com.detach().clone()
+#     # matrix multiplication
+#     params_com.mul_(a).add_(params_com_tilde, alpha = b)
+#     params_com_tilde.mul_(d).add_(params_old, alpha = c)
+# end
+
 
 """
-### The send THEN receive function.
-Expects that the peer with whom we communicate runs the symetric function receive THEN send.
-The p2p communication edits in-place the values of the parameters `params_com` and `params_com_tilde` (if `apply_acid`).
+### The synchronize function.
+Expects that the peer with whom we communicate runs the same synchronize function.
+The p2p communication edits in-place the values of the parameters params_com and params_com_tilde (if apply_acid).
 
 Parameters:
 - params\\_com (torch.tensor): 1D tensor containing the model's parameters.
@@ -57,100 +58,70 @@ Parameters:
 - delta\\_t\\_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
 - beta\\_tilde (float): the α̃ value to use in ACiD.
 """
-function do_send(
-    params_com,
-    params_other_worker,
-    process_group,
-    other_rank,
-    apply_acid,
-    params_com_tilde,
-    ode_matrix,
-    t_last_spike,
-    delta_t_grad,
-    beta_tilde,
+function synchronize!(
+    comm::MPI.Comm,
+    rank::Int64,
+    other_rank::Int64,
+    model::ACiDFluxModel,
+    buffer::Vector{AbstractArray},
+    # apply_acid,
+    # params_com_tilde,
+    # ode_matrix,
+    # t_last_spike,
+    # delta_t_grad,
+    # beta_tilde,
 )
-
-
-    # sends and receives the params to and from an other worker
-    dist.send(params_com, other_rank, process_group)
-    dist.recv(params_other_worker, other_rank, process_group)
-    if apply_acid
-        # retrieve the times
-        t_old = t_last_spike.value
-        t_new = time.time()
-        # apply continuous momentum
-        acid_ode(
-            params_com,
-            params_com_tilde,
-            ode_matrix,
-            t_old,
-            t_new,
-            delta_t_grad.value,
-        )
-        # update the t spike var
-        t_last_spike.value = t_new
-        # update params_com_tilde
-        params_com_tilde.add_(beta_tilde * (params_other_worker - params_com))
-        # inplace average of parameters
-        params_com.lerp_(params_other_worker, 0.5)
-    end
-end
-
-
-"""
-### The receive THEN send function.
-Expects that the peer with whom we communicate runs the symetric function send THEN receive.
-The p2p communication edits in-place the values of the parameters `params_com` and `params_com_tilde` (if `apply_acid`).
-
-Parameters:
-- params\\_com (torch.tensor): 1D tensor containing the model's parameters.
-- params\\_other\\_worker (torch.tensor): 1D tensor, placeholder to receive the `params_com` of the worker with whom we communicate.
-- process\\_group (a torch distributed `process_group`): specifies the `process_group` to use for the p2p communications.
-- other\\_rank (int): the rank of the worker we communicate with.
-- apply\\_acid (bool): whether or not to apply ACiD momentum. If true, the communication is an "event" triggering a momentum update.
-- params\\_com\\_tilde (torch.tensor): "momentum" variable, same size as `params_com`, mixing with `params_com` to obtain acceleration.
-- ode\\_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and `params_tilde`.
-- t\\_last\\_spike (float): time of the last local update to `params_com` (be it a communication or gradient one).
-- delta\\_t\\_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
-- beta\\_tilde (float): the α̃ value to use in ACiD.
-"""
-function do_recv(
-    params_com,
-    params_other_worker,
-    process_group,
-    other_rank,
-    apply_acid,
-    params_com_tilde,
-    ode_matrix,
-    t_last_spike,
-    delta_t_grad,
-    beta_tilde,
-)
-
+    ps = Flux.params(model.m)
 
     # receives and sends the params to and from an other worker
-    dist.recv(params_other_worker, other_rank, process_group)
-    dist.send(params_com, other_rank, process_group)
-    if apply_acid
-        # retrieve the times
-        t_old = t_last_spike.value
-        t_new = time.time()
-        # apply continuous momentum
-        acid_ode(
-            params_com,
-            params_com_tilde,
-            ode_matrix,
-            t_old,
-            t_new,
-            delta_t_grad.value,
-        )
-        # update the t spike var
-        t_last_spike.value = t_new
-        # update params_com_tilde
-        params_com_tilde.add_(beta_tilde * (params_other_worker - params_com))
+    if rank < other_rank
+        reqₛ = [
+            MPI.Isend(p, comm, dest = rank, tag = AVERAGING_TAG + i) for
+            (i, p) in enumerate(ps)
+        ]
+        MPI.Waitall!(reqₛ)
+
+        reqᵣ = [
+            MPI.Irecv!(buf, comm, source = rank, tag = AVERAGING_TAG + i)
+            for (i, buf) in enumerate(buffer)
+        ]
+        MPI.Waitall!(reqᵣ)
+    else
+        reqᵣ = [
+            MPI.Irecv!(buf, comm, source = other_rank, tag = AVERAGING_TAG + i) for (i, buf) in enumerate(buffer)
+        ]
+        MPI.Waitall!(reqᵣ)
+
+        reqₛ = [
+            MPI.Isend(p, comm, dest = other_rank, tag = AVERAGING_TAG + i)
+            for (i, p) in enumerate(ps)
+        ]
+        MPI.Waitall!(reqₛ)
     end
-    # inplace average of parameters
-    params_com.lerp_(params_other_worker, 0.5)
+
+    # if apply_acid
+    #     # # retrieve the times
+    #     # t_old = t_last_spike.value
+    #     # t_new = time.time()
+    #     # # apply continuous momentum
+    #     # acid_ode(
+    #     #     params_com,
+    #     #     params_com_tilde,
+    #     #     ode_matrix,
+    #     #     t_old,
+    #     #     t_new,
+    #     #     delta_t_grad.value,
+    #     # )
+    #     # # update the t spike var
+    #     # t_last_spike.value = t_new
+    #     # # update params_com_tilde
+    #     # params_com_tilde.add_(beta_tilde * (params_other_worker - params_com))
+    # end
+
+    # average of parameters
+    for (p̂, p) in zip(buffer, ps)
+        p .= (p̂ .+ p) / 2
+    end
 end
 
 
@@ -205,137 +176,75 @@ Parameters:
 
 """
 function gossip_process(
-    rank,
-    local_rank,
-    world_size,
-    rank_other,
-    params_com,
-    params_com_other,
-    barrier_sync_averaging,
-    continue_grad_routine,
-    barrier_end_init,
-    barrier_com_grad,
-    log,
-    com_history,
-    count_coms_local,
-    rate_com,
-    apply_acid,
-    params_com_tilde,
-    ode_matrix,
-    t_last_spike,
-    delta_t_grad,
-    beta_tilde,
-    deterministic_com,
+    comm::MPI.Comm,
+    rank::Int64,
+    other_rank::Threads.Atomic{Int64},
+    should_run::Threads.Atomic{Bool},
+    world_size::Int,
+    model::ACiDFluxModel,
+    barrier_sync_averaging::Barrier,
+    barrier_com_grad::Barrier,
+    rate_com::Real,
 )
 
-    # initialize the process group for communications
-    process_group = dist.init_process_group(
-        backend = "nccl",
-        rank = rank,
-        world_size = world_size,
-    )
-    # initialize model weights by performing a first all-reduce
-    torch.cuda.synchronize()
-    dist.all_reduce(params_com, group = process_group, op = dist.ReduceOp.SUM)
-    params_com.mul_(1 / world_size)
-    # initialize the right momentum variable
-    if apply_acid
-        # initialize the momentum variable
-        params_com_tilde.copy_(params_com)
-    end
-    # signal the end of the initialization to the main process
-    barrier_end_init.wait()
-    # create the gossip stream
-    gossip_stream = torch.cuda.Stream(device = local_rank)
-    count_coms_next_wait = 1
+    buffer = [similar(p) for p in Flux.params(model.m)]
 
-    # we do everything in the gossip stream
-    # with torch.cuda.stream(gossip_stream)
+    count_coms_next_wait = 1
+    count_coms_local = 0
+
     while true
-        rank_other_here = rank_other.value
+        rank_other_here = other_rank[]
         # wait the rank of an other available worker
         while rank_other_here == -1
-            rank_other_here = rank_other.value
+            rank_other_here = other_rank[]
         end
-        # rank_other is equal to -2 when we made enough grad steps in total
-        # so there is no need to communicate anymore
-        if rank_other_here == -2
-            barrier_sync_averaging.abort()
+        # we made enough grad steps in total so there is no need to communicate anymore
+        if rank_other_here == KILL_PROCESS_SIGNAL
+            abort(barrier_sync_averaging)
             break
         end
+
         # averaging with rank_other.
         # the order in which to perform the send and receive operations is dictated by the test rank_other < rank.
-        if rank_other_here < rank
-            do_send(
-                params_com,
-                params_com_other,
-                process_group,
-                rank_other_here,
-                apply_acid,
-                params_com_tilde,
-                ode_matrix,
-                t_last_spike,
-                delta_t_grad,
-                beta_tilde,
-            )
-        else
-            do_recv(
-                params_com,
-                params_com_other,
-                process_group,
-                rank_other_here,
-                apply_acid,
-                params_com_tilde,
-                ode_matrix,
-                t_last_spike,
-                delta_t_grad,
-                beta_tilde,
-            )
-        end
+        synchronize!(comm, rank, other_rank[], model, buffer)
+
         # logs the communication
-        count_coms_local.value += 1
-        count_com_rank = com_history[rank_other_here]
-        count_com_rank.value += 1
+        count_coms_local += 1
+
         # wait or synchronize with the grad process
         if rate_com >= 1
-            if count_coms_local.value >= count_coms_next_wait
+            if count_coms_local >= count_coms_next_wait
                 # Wait for 1 averaging step before grad
-                barrier_com_grad.wait()
-                barrier_com_grad.reset()
-                # if coms are deterministic
-                if deterministic_com
-                    # add the precise amount of com before the next grad step
-                    count_coms_next_wait += rate_com
-                else
-                    # else, uses poisson law to implement the Poisson Point Processes for communications
-                    count_coms_next_wait +=
-                        np.random.poisson(lam = rate_com, size = None)
-                end
+                wait(barrier_com_grad)
+                reset(barrier_com_grad)
+                # add the precise amount of com before the next grad step
+                count_coms_next_wait += rate_com
             end
         else
-            barrier_com_grad.wait()
+            wait(barrier_com_grad)
         end
+
         # re-initialize the mp.Value var for next round
-        rank_other.value = -1
+        Threads.atomic_cas!(other_rank, rank_other_here, -1)
         # signal to the synchronization process we are available for communication
         try
-            barrier_sync_averaging.wait()
-            t_beg_com = time.time()
+            wait(barrier_sync_averaging)
         catch
             # only way this fails is barrier already broken by sync process
             break
         end
     end
+
     # signal to grad process to stop
-    continue_grad_routine.value = 0
+    Threads.atomic_cas!(should_run, true, false)
     try
-        barrier_com_grad.abort()
+        abort(barrier_com_grad)
     catch
         nothing
     end
-    # alll reduce the params at the end of the training
-    dist.barrier(group = process_group)
-    torch.cuda.synchronize()
-    dist.all_reduce(params_com, group = process_group, op = dist.ReduceOp.SUM)
-    params_com.mul_(1 / world_size)
+
+    # all reduce the params at the end of the training
+    MPI.Barrier(comm)
+    # dist.all_reduce(params_com, group = process_group, op = dist.ReduceOp.SUM)
+    # params_com.mul_(1 / world_size)
 end

@@ -1,4 +1,4 @@
-# ACiD [![Build Status](https://github.com/jakubpeleska/ACiD.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/jakubpeleska/ACiD.jl/actions/workflows/CI.yml?query=branch%3Amain)
+# ACiD [![Build Status](https://github.com/jakubpeleska/ACiD.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/jakubpeleska/ACiD.jl/actions/workflows/CI.yml?query=branch%3Amain) [![Latest](https://img.shields.io/badge/docs-dev-blue.svg)](https://jakubpeleska.github.io/ACiD.jl/dev/)
 
 This is an implementation of an asynchronous multiprocessing optimization algorithm with a continuous local momentum called **A²CiD²** in the Julia programming language as introduced in [[1]].
 

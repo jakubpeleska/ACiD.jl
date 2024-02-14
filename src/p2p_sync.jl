@@ -13,6 +13,10 @@ export sync_process, listen_given_rank, master_process
 
 const KILL_PROCESS_SIGNAL = Int64(-2)
 
+const AVAILABLE_TAG = 123
+const RANK_TAG = 234
+
+
 
 """
 ### Process run by every worker in the background.
@@ -44,47 +48,43 @@ Parameters:
 - log (logger): to print messages in the logs if needed.
 """
 function sync_process(
-    rank,
-    world_size,
-    rank_other,
-    new_grads,
-    barrier_sync_averaging,
-    log,
+    comm::MPI.Comm,
+    master_rank::Int64,
+    other_rank::Threads.Atomic{Int64},
+    ∇new::Threads.Atomic{Int64},
+    barrier_sync_averaging::Barrier,
 )
 
-    # initialize the process group for rank communications
-    process_group = dist.init_process_group(
-        backend = "gloo",
-        init_method = "tcp://" +
-                      os.environ["MASTER_ADDR"] +
-                      ":" +
-                      str(int(os.environ["MASTER_PORT"]) + 1),
-        rank = rank,
-        world_size = 2 * world_size + 1,
-    )
-
     while true
-        # initialize a tensor to send master process
-        # use the number of grad steps done by worker rank since last communication as message
-        # we use the same tensor as placeholder to receive the other rank
-        tensor_other_rank = torch.ones(1) * new_grads.value
-        # send a tensor to master to signal worker nb rank is available to communicate
-        dist.send(tensor_other_rank, rank + world_size, process_group)
+        ∇newₙ = ∇new[]
+
+        # send a tensor to master to signal worker is available to communicate
+        MPI.send(∇newₙ, comm, dest = master_rank, tag = AVAILABLE_TAG)
+
         # re-initialize the new_grads value
-        new_grads.value = new_grads.value - int(tensor_other_rank.data)
+        Threads.atomic_sub!(∇new, ∇newₙ)
+
         # receive the rank from the last process in the group
-        dist.recv(tensor_other_rank, 2 * world_size, process_group)
+        other_rankₙ = MPI.recv(comm, source = master_rank, tag = RANK_TAG)
+
         # changes the rank value localy saved in the mp.Value variable
-        rank_other.value = int(tensor_other_rank.data)
-        if rank_other.value == -2
-            # signal to the listening process to kil the process
-            dist.send(tensor_other_rank, rank + world_size, process_group)
-            barrier_sync_averaging.abort()
+        Threads.atomic_cas!(other_rank, other_rank[], other_rankₙ)
+        if other_rankₙ == KILL_PROCESS_SIGNAL
+            # signal to the listening process to kill the process
+            MPI.send(
+                KILL_PROCESS_SIGNAL,
+                comm,
+                dest = master_rank,
+                tag = AVAILABLE_TAG,
+            )
+
+            abort(barrier_sync_averaging)
             break
         end
+
         # wait for the p2p averaging
-        barrier_sync_averaging.wait()
-        barrier_sync_averaging.reset()
+        wait(barrier_sync_averaging)
+        reset(barrier_sync_averaging)
     end
 end
 
@@ -110,27 +110,24 @@ Parameters:
 - log (logger): to print messages in the logs if needed.
 """
 function listen_given_rank(
-    rank::Int64,
     comm::MPI.Comm,
+    rank::Int64,
     queue::Channel{Int64},
     ∇steps::Threads.Atomic{Int64},
 )
-    # initialize the placeholder tensor
-    ∇₊ = 0
-
     while true
         # receive information that worker rank is available for communications.
         # the act of receiving a message is the signal itself.
         # the inside of 'tensor_other_rank' variable contains the "new grads" performed by rank since last communication.
-        ∇₊ = MPI.recv(comm, rank, rank * 2)
+        ∇new = MPI.recv(comm, source = rank, tag = AVAILABLE_TAG)
 
         # order to kill all processes
-        if ∇₊ == -2
+        if ∇new == KILL_PROCESS_SIGNAL
             break
         end
 
         # add the new grads
-        Threads.atomic_add!(∇steps, ∇₊)
+        Threads.atomic_add!(∇steps, ∇new)
         # signal the orchestrating process that worker nb rank is available for communication
         put!(queue, rank)
     end
@@ -149,7 +146,12 @@ Parameters:
 - ∇max\\_steps (int): The target number of total nb of grads performed by all workers.
                             When it is reached, this process sends the signal to all other to stop all computations & communications.
 """
-function master_process(world_size::Int64, comm::MPI.Comm, ∇max_steps::Int64)
+function master_process(
+    comm::MPI.Comm,
+    world_size::Int64,
+    should_run::Threads.Atomic{Bool};
+    ∇max_steps::Int64 = -1,
+)
     # Initialize multiprocessing variables shared with the "listen_given_rank" processes, also hosted by worker 0.
     # Queue containing the rank of available workers. 
     # Ranks are enqueued by their corresponding "listen_given_rank" process, and dequeued here to make pairs.
@@ -162,35 +164,32 @@ function master_process(world_size::Int64, comm::MPI.Comm, ∇max_steps::Int64)
 
     # launch the listening processes for each rank
     list_processes = [
-        Threads.@spawn listen_given_rank(rank, comm, queue, ∇steps) for
-        rank in 0:world_size
+        Threads.@spawn listen_given_rank(comm, rank, queue, ∇steps) for
+        rank in 1:world_size
     ]
 
     # tuple of ranks stores the first 2 available workers to communicate
-    tuple_of_ranks = []
-    # init placeholder tensors to communicate with the appropriate "sync_process" process.
-    rank₀ = 0
-    rank₁ = 0
+    ranks = Vector{Int64}()
 
     # while the total number of grad is not reached
-    while ∇steps[] < ∇max_steps
+    while should_run[] && (∇max_steps == -1 || ∇steps[] < ∇max_steps)
         # get the rank of the first available worker
-        append!(tuple_of_ranks, take!(queue))
+        push!(ranks, take!(queue))
         # if 2 workers are available for communication
-        if length(tuple_of_ranks) == 2
-            # gather their ranks
-            rank₀ = tuple_of_ranks[0]
-            rank₁ = tuple_of_ranks[1]
+        if length(ranks) == 2
             # send their ranks to each other
-            MPI.Isend(rank₀, comm, rank₁)
-            MPI.Isend(rank₁, comm, rank₀)
+            MPI.send(ranks[1], comm, dest = ranks[2])
+            MPI.send(ranks[2], comm, dest = ranks[1])
             # re-initialize the tuple as an empty one
-            tuple_of_ranks = []
+            ranks = Vector{Int64}()
         end
     end
 
     # when we go out of the while loop, send to everybody the message to stop processes
-    req = [MPI.Isend(KILL_PROCESS_SIGNAL, comm, rank) for rank in 0:world_size]
+    req = [
+        MPI.Isend(KILL_PROCESS_SIGNAL, comm, dest = rank) for
+        rank in 0:world_size
+    ]
 
     MPI.Waitall(req)
 
