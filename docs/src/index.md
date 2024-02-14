@@ -15,6 +15,9 @@ println(s);
 ```
 -->
 
+```@contents
+```
+
 ## Functions Index
 ```@docs
 acid_ode
@@ -24,6 +27,10 @@ sync_process
 do_send
 do_recv
 listen_given_rank
+```
+
+## Index
+```@index
 ```
 
 ## References

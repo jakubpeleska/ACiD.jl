@@ -8,6 +8,9 @@
 # from multiprocessing import Process, Manager
 # from utils.graph_utils import ExponentialGraph, CycleGraph
 
+# functions need to be exported for the documentation
+export sync_process, listen_given_rank, master_process
+
 const KILL_PROCESS_SIGNAL = Int64(-2)
 
 

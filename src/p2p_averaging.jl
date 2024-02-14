@@ -6,7 +6,7 @@
 
 using ExponentialUtilities
 
-# for the purpose of testing the documentation
+# functions need to be exported for the documentation
 export acid_ode, do_send, do_recv, gossip_process
 
 """
