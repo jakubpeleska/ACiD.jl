@@ -8,6 +8,8 @@
 # from multiprocessing import Process, Manager
 # from utils.graph_utils import ExponentialGraph, CycleGraph
 
+# for the purpose of testing the documentation
+export sync_process, listen_given_rank, master_process
 
 """
 ### Process run by every worker in the background.
