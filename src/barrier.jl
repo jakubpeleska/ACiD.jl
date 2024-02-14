@@ -4,7 +4,7 @@ mutable struct Barrier
     condvar::Condition
 
     function Barrier(threshold::Int)
-        new(0, threshold, ReentrantLock(), Condition())
+        new(Threads.Atomic{Int}(0), threshold, Condition())
     end
 end
 

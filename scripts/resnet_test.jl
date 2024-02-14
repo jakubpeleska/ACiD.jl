@@ -1,6 +1,6 @@
 using Flux
 
-using MLUtils, CUDA
+using MLUtils
 
 using Metalhead
 
@@ -12,11 +12,14 @@ using ProgressBars: ProgressBar, update, set_description, set_postfix
 
 using Printf
 
+using ACiD, MPI
 
 
 model = ResNet(18; pretrain = false, inchannels = 3, nclasses = 10)
 
-optim = Flux.setup(Flux.Adam(), model)
+model = ACiD.Init(model)
+
+optim = Flux.setup(Flux.Adam(), model.m)
 
 labels = collect(0:9)
 batchsize = 128
@@ -35,8 +38,14 @@ testX = testSet.features
 testY = Flux.onehotbatch(testSet.targets, labels)
 testLoader = DataLoader((testX, testY), batchsize = batchsize, shuffle = true)
 
+comm = MPI.COMM_WORLD
+rank = MPI.Comm_rank(comm)
+
 epochs = 100
 for e in 1:epochs
+    if rank == 0
+        println(rank)
+    end
     trainLoss = 0
     trainedSamples = 0
     trainIter = ProgressBar(trainLoader)
@@ -44,7 +53,7 @@ for e in 1:epochs
         l, gs = Flux.withgradient(model) do m
             Flux.logitcrossentropy(m(x), y, agg = sum)
         end
-        Flux.update!(optim, model, gs[1])
+        ACiD.update!(optim, model, gs[1])
 
         trainedSamples += size(x, 4)
         trainLoss += l
