@@ -14,12 +14,12 @@ export acid_ode, do_send, do_recv, gossip_process
 Update parameters (params_com and params_com_tilde) in-place.
 
 Parameters:
-- params_com (torch.tensor): 1D tensor containing all of the models learnable parameters.
-- params_com_tilde (torch.tensor): "momentum" variable, same size as params_com, mixing with params_com to obtain acceleration.
-- ode_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and params_tilde.
-- t_old (float): time of the last local update.
-- t_new (float): time of the current update.
-- delta_t_grad (float): time that it takes to compute a grad step. Used to re-normalize time, as done in the paper.
+- params\\_com (torch.tensor): 1D tensor containing all of the models learnable parameters.
+- params\\_com\\_tilde (torch.tensor): "momentum" variable, same size as `params_com`, mixing with `params_com` to obtain acceleration.
+- ode_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and `params_tilde`.
+- t\\_old (float): time of the last local update.
+- t\\_new (float): time of the current update.
+- delta\\_t\\_grad (float): time that it takes to compute a grad step. Used to re-normalize time, as done in the paper.
 """
 function acid_ode(
     params_com::Vector,
@@ -43,19 +43,19 @@ end
 """
 ### The send THEN receive function.
 Expects that the peer with whom we communicate runs the symetric function receive THEN send.
-The p2p communication edits in-place the values of the parameters params_com and params_com_tilde (if apply_acid).
+The p2p communication edits in-place the values of the parameters `params_com` and `params_com_tilde` (if `apply_acid`).
 
 Parameters:
-- params_com (torch.tensor): 1D tensor containing the model's parameters.
-- params_other_worker (torch.tensor): 1D tensor, placeholder to receive the params_com of the worker with whom we communicate.
-- process_group (a torch distributed process_group): specifies the process_group to use for the p2p communications.
-- other_rank (int): the rank of the worker we communicate with.
-- apply_acid (bool): whether or not to apply ACiD momentum. If true, the communication is an "event" triggering a momentum update.
-- params_com_tilde (torch.tensor): "momentum" variable, same size as params_com, mixing with params_com to obtain acceleration.
-- ode_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and params_tilde.
-- t_last_spike (float): time of the last local update to params_com (be it a communication or gradient one).
-- delta_t_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
-- beta_tilde (float): the \alpha_tilde value to use in ACiD.
+- params\\_com (torch.tensor): 1D tensor containing the model's parameters.
+- params\\_other\\_worker (torch.tensor): 1D tensor, placeholder to receive the `params_com` of the worker with whom we communicate.
+- process\\_group (a torch distributed `process_group`): specifies the `process_group` to use for the p2p communications.
+- other\\_rank (int): the rank of the worker we communicate with.
+- apply\\_acid (bool): whether or not to apply ACiD momentum. If true, the communication is an "event" triggering a momentum update.
+- params\\_com\\_tilde (torch.tensor): "momentum" variable, same size as `params_com`, mixing with `params_com` to obtain acceleration.
+- ode\\_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and `params_tilde`.
+- t\\_last\\_spike (float): time of the last local update to `params_com` (be it a communication or gradient one).
+- delta\\_t\\_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
+- beta\\_tilde (float): the α̃ value to use in ACiD.
 """
 function do_send(
     params_com,
@@ -100,19 +100,19 @@ end
 """
 ### The receive THEN send function.
 Expects that the peer with whom we communicate runs the symetric function send THEN receive.
-The p2p communication edits in-place the values of the parameters params_com and params_com_tilde (if apply_acid).
+The p2p communication edits in-place the values of the parameters `params_com` and `params_com_tilde` (if `apply_acid`).
 
 Parameters:
-- params_com (torch.tensor): 1D tensor containing the model's parameters.
-- params_other_worker (torch.tensor): 1D tensor, placeholder to receive the params_com of the worker with whom we communicate.
-- process_group (a torch distributed process_group): specifies the process_group to use for the p2p communications.
-- other_rank (int): the rank of the worker we communicate with.
-- apply_acid (bool): whether or not to apply ACiD momentum. If true, the communication is an "event" triggering a momentum update.
-- params_com_tilde (torch.tensor): "momentum" variable, same size as params_com, mixing with params_com to obtain acceleration.
-- ode_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and params_tilde.
-- t_last_spike (float): time of the last local update to params_com (be it a communication or gradient one).
-- delta_t_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
-- beta_tilde (float): the \alpha_tilde value to use in ACiD.
+- params\\_com (torch.tensor): 1D tensor containing the model's parameters.
+- params\\_other\\_worker (torch.tensor): 1D tensor, placeholder to receive the `params_com` of the worker with whom we communicate.
+- process\\_group (a torch distributed `process_group`): specifies the `process_group` to use for the p2p communications.
+- other\\_rank (int): the rank of the worker we communicate with.
+- apply\\_acid (bool): whether or not to apply ACiD momentum. If true, the communication is an "event" triggering a momentum update.
+- params\\_com\\_tilde (torch.tensor): "momentum" variable, same size as `params_com`, mixing with `params_com` to obtain acceleration.
+- ode\\_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and `params_tilde`.
+- t\\_last\\_spike (float): time of the last local update to `params_com` (be it a communication or gradient one).
+- delta\\_t\\_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
+- beta\\_tilde (float): the α̃ value to use in ACiD.
 """
 function do_recv(
     params_com,
@@ -159,48 +159,48 @@ end
 ### Gossip routine for the p2p averaging of the model's parameters running in the background.
 
 * Average the parameters of all the workers at the beginning (to start from a common initialization), and at the end.
-* Use the mp.Variable "rank_other" to communicate with the orchestring process
+* Use the mp.Variable `rank_other` to communicate with the orchestring process
     that pairs available workers together to perform p2p communications, allowing this
     function to know with which rank to communicate next.
-* Depending on deterministic_com, implement or not a P.P.P for the communication process:
+* Depending on `deterministic_com`, implement or not a P.P.P for the communication process:
     if true, a random number of p2p communications between 2 grad steps are done, following a poisson law.
 * When the orchestrating process counted that the right number of grad step have been performed in total,
     signal it back to this process (stops the communication routine), which signals to the main process to stop performing grad steps.
 
 Parameters:
 - rank (int): our rank id in the distributed setting.
-- local_rank (int): the local rank of the worker inside its compute node (to create a Cuda Stream in the right GPU).
-- world_size (int): the total number of workers.
-- rank_other (mp.Value): a multiprocessing Value to store the id of the rank of the next communication. It is updated
+- local\\_rank (int): the local rank of the worker inside its compute node (to create a Cuda Stream in the right GPU).
+- world\\_size (int): the total number of workers.
+- rank\\_other (mp.Value): a multiprocessing Value to store the id of the rank of the next communication. It is updated
                             by the orchestrating process pairing workers together, and re-initialized by this one after a communication.
-                            if rank_other.value == -1: (base value) no peer has been found yet.
-                            if rank_other.value == -2: signal from the orchestrating process that enough gradients have been computed in total,
+                            if `rank_other.value` == -1: (base value) no peer has been found yet.
+                            if `rank_other.value` == -2: signal from the orchestrating process that enough gradients have been computed in total,
                                                     stops the communication process.
-                            if rank_other.value not in [-1, -2]: contains the rank of the worker we are supposed to communicate with next.
-- params_com (torch.tensor): 1D tensor containing the model's parameters.
-- params_other (torch.tensor): 1D tensor, placeholder to receive the params_com of the worker with whom we communicate.
-- barrier_sync_averaging (mp.Barrier): a barrier used to communicate with the synchronization process.
+                            if `rank_other.value` not in [-1, -2]: contains the rank of the worker we are supposed to communicate with next.
+- params\\_com (torch.tensor): 1D tensor containing the model's parameters.
+- params\\_other (torch.tensor): 1D tensor, placeholder to receive the `params_com` of the worker with whom we communicate.
+- barrier\\_sync\\_averaging (mp.Barrier): a barrier used to communicate with the synchronization process.
                                         When we meet this barrier, we signal to the sync process that we finished our previous communication,
                                         and are available for the next one, so that it can begin to look for another available peer to connect
                                         to for the next p2p communication.
-- continue_grad_routine (mp.Value containing a bool): whether or not the grad process should continue.
+- continue\\_grad\\_routine (mp.Value containing a bool): whether or not the grad process should continue.
                                                         Initialized at 1 (true). Is put to 0 (False) when the orchestrating
                                                         process signals to us that the total number of gradients quota has been met.
-- barrier_end_init (mp.Barrier): a barrier to signal to the __init__ function of ADP's class that the initializing average of the parameters
+- barrier\\_end\\_init (mp.Barrier): a barrier to signal to the \\_\\_init\\_\\_ function of ADP's class that the initializing average of the parameters
                                     has been performed, and that ADP can resume its init.
-- barrier_com_grad (mp.Barrier): a barrier to make sure a certain amount of communication has been made between 2 grads.
-                                    Also used to make sure a certain amount of grad have been performed between 2 comm if rate_com < 1.
+- barrier\\_com\\_grad (mp.Barrier): a barrier to make sure a certain amount of communication has been made between 2 grads.
+                                    Also used to make sure a certain amount of grad have been performed between 2 comm if `rate_com` < 1.
 - log (logger): to print messages in the logs if needed.
-- com_history (list of mp.Value): list of size world_size. Used to logg how many times this worker communicated with each of its peers.
-- count_coms_local (mp.Value): a count of the number of p2p communications this worker has done.
-- rate_com (float): the rate at which p2p communications are done (in expectation) compared to local grad steps.
-- apply_acid (bool): whether or not to apply ACiD momentum. If True, the communication is an "event" triggering a momentum update.
-- params_com_tilde (torch.tensor): "momentum" variable, same size as params_com, mixing with params_com to obtain acceleration.
-- ode_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and params_tilde.
-- t_last_spike (float): time of the last local update to params_com (be it a communication or gradient one).
-- delta_t_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
-- beta_tilde (float): the \alpha_tilde value to use in ACiD.
-- deterministic_com (bool): whether or not to schedule to use Poisson Point Processes for the communications.
+- com\\_history (list of mp.Value): list of size `world_size`. Used to logg how many times this worker communicated with each of its peers.
+- count\\_coms\\_local (mp.Value): a count of the number of p2p communications this worker has done.
+- rate\\_com (float): the rate at which p2p communications are done (in expectation) compared to local grad steps.
+- apply\\_acid (bool): whether or not to apply ACiD momentum. If True, the communication is an "event" triggering a momentum update.
+- params\\_com\\_tilde (torch.tensor): "momentum" variable, same size as `params_com`, mixing with `params_com` to obtain acceleration.
+- ode\\_matrix (torch.tensor): a 2x2 matrix storing the parameters of the linear mixing between params and `params_tilde`.
+- t\\_last\\_spike (float): time of the last local update to `params_com` (be it a communication or gradient one).
+- delta\\_t\\_grad (mp.Value storing a double): the variable keeping track of the time that it takes to make a grad step.
+- beta\\_tilde (float): the α̃ value to use in ACiD.
+- deterministic\\_com (bool): whether or not to schedule to use Poisson Point Processes for the communications.
                             if True, a random number of p2p communications between 2 grad steps are done, following a poisson law.
 
 """
