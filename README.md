@@ -5,7 +5,7 @@ This is an implementation of an asynchronous multiprocessing optimization algori
 > [!NOTE]
 > There is also an official demo by the original authors of [[1]] in Python: [AdelNabli/ACiD](https://github.com/AdelNabli/ACiD "AdelNabli/ACiD: Implementation of NeurIPS 2023 paper ACiD: Accelerating Asynchronous Communication in Decentralized Deep Learning.")
 
-<!-- -->
+<!-- 
 ## Usage
 ### Installation
 ### Example
@@ -13,6 +13,7 @@ This is an implementation of an asynchronous multiprocessing optimization algori
 s = "Julia syntax highlighting";
 println(s);
 ```
+-->
 
 ## References
 
