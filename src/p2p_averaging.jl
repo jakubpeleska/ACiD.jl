@@ -184,36 +184,11 @@ function gossip_process(
     world_size::Int,
     model::ACiDFluxModel,
     barrier_sync_averaging::Barrier,
-    barrier_end_init::Barrier,
     barrier_com_grad::Barrier,
     rate_com::Real,
-    # apply_acid,
-    # params_com_tilde,
-    # ode_matrix,
-    # t_last_spike,
-    # delta_t_grad,
-    # beta_tilde,
 )
 
-
-    # # initialize model weights by performing a first all-reduce
-    # torch.cuda.synchronize()
-    # params_com = MPI.Allreduce(model, .+, comm)
-    # params_com ./= world_size
-    # dist.all_reduce(params_com, group = process_group, op = dist.ReduceOp.SUM)
-    # params_com.mul_(1 / world_size)
-
-
-    # # initialize the right momentum variable
-    # if apply_acid
-    #     # initialize the momentum variable
-    #     params_com_tilde.copy_(params_com)
-    # end
-
     buffer = [similar(p) for p in Flux.params(model.m)]
-
-    # signal the end of the initialization to the main process
-    wait(barrier_end_init)
 
     count_coms_next_wait = 1
     count_coms_local = 0
@@ -232,19 +207,7 @@ function gossip_process(
 
         # averaging with rank_other.
         # the order in which to perform the send and receive operations is dictated by the test rank_other < rank.
-        synchronize!(
-            comm,
-            rank,
-            other_rank[],
-            model,
-            buffer,
-            # apply_acid,
-            # params_com_tilde,
-            # ode_matrix,
-            # t_last_spike,
-            # delta_t_grad,
-            # beta_tilde,
-        )
+        synchronize!(comm, rank, other_rank[], model, buffer)
 
         # logs the communication
         count_coms_local += 1
@@ -263,7 +226,7 @@ function gossip_process(
         end
 
         # re-initialize the mp.Value var for next round
-        other_rank.value = -1
+        Threads.atomic_cas!(other_rank, rank_other_here, -1)
         # signal to the synchronization process we are available for communication
         try
             wait(barrier_sync_averaging)

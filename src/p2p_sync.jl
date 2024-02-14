@@ -165,7 +165,7 @@ function master_process(
     # launch the listening processes for each rank
     list_processes = [
         Threads.@spawn listen_given_rank(comm, rank, queue, ∇steps) for
-        rank in 0:world_size
+        rank in 1:world_size
     ]
 
     # tuple of ranks stores the first 2 available workers to communicate

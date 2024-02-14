@@ -4,19 +4,17 @@ struct ACiDFluxModel{M}
     ∇new::Threads.Atomic{Int64}
     should_run::Threads.Atomic{Bool}
     barrier::Barrier
-
-    ∇new_local::Int64
-    ∇next_wait::Real
+    ∇count_local::Threads.Atomic{Int64}
+    ∇next_wait::Threads.Atomic{Float64}
 end
 
-function update!(
-    opt::Flux.Optimise.AbstractOptimiser,
-    model::ACiDFluxModel,
-    gs::Core.Any,
-)
+function update!(opt, model::ACiDFluxModel, gs::Core.Any)
     Flux.update!(opt, model.m, gs)
 
-    if model.∇new_local >= model.∇next_wait
+    comm = MPI.COMM_WORLD
+    rank = MPI.Comm_rank(comm)
+
+    if rank != 0 && model.∇count_local >= model.∇next_wait
         # Wait for 1 averaging step before grad
         wait(model.barrier)
         reset(model.barrier)
@@ -29,5 +27,5 @@ function update!(
     end
 
     Threads.atomic_add!(model.∇new, 1)
-    ∇new_local += 1
+    Threads.atomic_add!(model.∇count_local, 1)
 end

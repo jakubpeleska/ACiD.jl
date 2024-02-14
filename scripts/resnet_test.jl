@@ -41,27 +41,28 @@ testLoader = DataLoader((testX, testY), batchsize = batchsize, shuffle = true)
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 
+show_output = rank == 1
+
 epochs = 100
 for e in 1:epochs
-    if rank == 0
-        println(rank)
-    end
     trainLoss = 0
     trainedSamples = 0
-    trainIter = ProgressBar(trainLoader)
+    trainIter = show_output ? ProgressBar(trainLoader) : trainLoader
     for (x, y) in trainIter
-        l, gs = Flux.withgradient(model) do m
+        l, gs = Flux.withgradient(model.m) do m
             Flux.logitcrossentropy(m(x), y, agg = sum)
         end
         ACiD.update!(optim, model, gs[1])
 
         trainedSamples += size(x, 4)
         trainLoss += l
-        set_description(trainIter, @sprintf("Epoch %d/%d", e, epochs))
-        set_postfix(
-            trainIter,
-            train_loss = @sprintf("%.4f", trainLoss / trainedSamples)
-        )
+        if show_output
+            set_description(trainIter, @sprintf("Epoch %d/%d", e, epochs))
+            set_postfix(
+                trainIter,
+                train_loss = @sprintf("%.4f", trainLoss / trainedSamples)
+            )
+        end
     end
     trainLoss /= trainedSamples
 
@@ -70,7 +71,7 @@ for e in 1:epochs
     testLoss = 0
     for (x, y) in testLoader
         testSamples += size(x, 4)
-        out = model(x)
+        out = model.m(x)
         ŷ = Flux.onecold(out, labels)
         yₜ = Flux.onecold(y, labels)
         testAcc += sum(ŷ .== yₜ)
@@ -80,12 +81,14 @@ for e in 1:epochs
     testAcc /= testSamples
     testLoss /= testSamples
 
-    set_postfix(
-        trainIter,
-        train_loss = @sprintf("%.4f", trainLoss),
-        test_acc = @sprintf("%.4f", testAcc),
-        test_loss = @sprintf("%.4f", testLoss)
-    )
-    update(trainIter, 0, force_print = true)
+    if show_output
+        set_postfix(
+            trainIter,
+            train_loss = @sprintf("%.4f", trainLoss),
+            test_acc = @sprintf("%.4f", testAcc),
+            test_loss = @sprintf("%.4f", testLoss)
+        )
+        update(trainIter, 0, force_print = true)
+    end
 end
 

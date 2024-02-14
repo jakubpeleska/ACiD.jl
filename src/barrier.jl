@@ -1,6 +1,6 @@
-mutable struct Barrier
+struct Barrier
     count::Threads.Atomic{Int}
-    const threshold::Int
+    threshold::Int
     condvar::Condition
 
     function Barrier(threshold::Int)
@@ -12,19 +12,19 @@ function wait(barrier::Barrier)
     Threads.atomic_add!(barrier.count, 1)
     if barrier.count[] == barrier.threshold
         Threads.atomic_cas!(barrier.count, barrier.count[], 0)
-        notify(barrier.condvar)  # Wake up all waiting processes
+        Threads.notify(barrier.condvar)  # Wake up all waiting processes
     else
-        wait(barrier.condvar)
+        Threads.wait(barrier.condvar)
     end
 end
 
 function reset(barrier::Barrier)
     barrier.count = 0  # Reset
-    notify(barrier.condvar)  # Wake up all waiting processes
+    Threads.notify(barrier.condvar)  # Wake up all waiting processes
 end
 
 function abort(barrier::Barrier)
     # TODO: error
     barrier.count = 0  # Reset
-    notify(barrier.condvar)  # Wake up all waiting processes
+    Threads.notify(barrier.condvar)  # Wake up all waiting processes
 end
