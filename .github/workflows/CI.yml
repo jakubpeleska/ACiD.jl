@@ -36,6 +36,14 @@ jobs:
       - name: Enable downloading datasets (like CIFAR10)
         run: echo "DATADEPS_ALWAYS_ACCEPT=true" >> ${GITHUB_ENV}
         shell: bash
+      - name: Install dependencies in the environment
+        run: |
+          using Pkg
+          Pkg.add(url="https://github.com/jakubpeleska/ACiD.jl.git")
+          Pkg.resolve()
+          Pkg.update()
+          Pkg.instantiate()
+        shell: julia --color=yes --project=. {0}
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v1
         with:
