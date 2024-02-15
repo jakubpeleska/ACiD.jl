@@ -1,2 +1,13 @@
 [deps]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+FluxMPI = "acf642fa-ee0e-513a-b9d5-bcd150f7ec3b"
+MLDatasets = "eb30cadb-4394-5ae3-aed4-317e484a6458"
+MLUtils = "f1d291b0-491e-4a28-83b9-f70985020b54"
+MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
+Metalhead = "dbeba491-748d-5e0e-a39e-b530a07fa0cc"
+Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
+Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+ProgressBars = "49802e3a-d2f1-5c88-81d8-b72133a6f568"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
