@@ -11,8 +11,6 @@ Pages = ["p2p_averaging.md"]
 ## Public Interface
 
 ```@docs
-acid_ode
-do_send
-do_recv
+synchronize!
 gossip_process
 ```
