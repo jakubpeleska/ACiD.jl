@@ -6,6 +6,7 @@
 
 
 # functions need to be exported for the documentation
+export acid_ode, do_send, do_recv, gossip_process
 
 const AVERAGING_TAG = 345
 

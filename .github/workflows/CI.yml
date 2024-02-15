@@ -30,6 +30,9 @@ jobs:
         arch:
           - x64
     steps:
+      - name: Set the number of threads to 5
+        run: echo "JULIA_NUM_THREADS=5" >> ${GITHUB_ENV}
+        shell: bash
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v1
         with:

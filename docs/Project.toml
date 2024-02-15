@@ -4,6 +4,7 @@ ExponentialUtilities = "d4d017d3-3776-5f7e-afef-a10c40355c18"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
 Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 
 [compat]
 Documenter = "1.2"
